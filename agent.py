@@ -14,17 +14,17 @@ HEADERS = {
     "Content-Type": "application/json",
     "HTTP-Referer": "https://your-app-name.com",
     "X-Title": "AI Coding Agent",
+    "User-Agent": "ai-coding-agent/1.0"
 }
-
 def run_agent(message: str):
     payload = {
-        "model": "deepseek/deepseek-coder",
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": message}
-        ],
-        "temperature": 0.2,
-        "max_tokens": 2000
+    "model": "deepseek/deepseek-coder-v2",
+    "messages": [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": message}
+    ],
+    "temperature": 0.2,
+    "max_tokens": 2000
     }
 
     response = requests.post(API_URL, headers=HEADERS, json=payload)
