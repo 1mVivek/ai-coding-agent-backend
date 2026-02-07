@@ -1,15 +1,20 @@
+import os
 from openai import OpenAI
 from prompts import SYSTEM_PROMPT
-import os
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=os.getenv("OPENROUTER_API_KEY"),
+)
 
-def run_agent(user_message: str):
+def run_agent(message: str):
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model="deepseek/deepseek-coder",
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_message}
-        ]
+            {"role": "user", "content": message}
+        ],
+        temperature=0.2,
+        max_tokens=2000
     )
     return response.choices[0].message.content
