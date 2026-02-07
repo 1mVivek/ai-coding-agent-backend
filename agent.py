@@ -18,7 +18,7 @@ HEADERS = {
 }
 def run_agent(message: str):
     payload = {
-    "model": "deepseek/deepseek-coder-v2",
+    "model": "deepseek/deepseek-chat",
     "messages": [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": message}
