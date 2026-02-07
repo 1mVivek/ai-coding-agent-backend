@@ -28,7 +28,17 @@ def run_agent(message: str):
     }
 
     response = requests.post(API_URL, headers=HEADERS, json=payload)
-    response.raise_for_status()
+
+    # 👇 DEBUG LOG (critical)
+    if response.status_code != 200:
+        print("OpenRouter status:", response.status_code)
+        print("OpenRouter response:", response.text)
+        return f"Upstream error: {response.text}"
 
     data = response.json()
+
+    # 👇 SAFETY CHECK
+    if "choices" not in data:
+        return f"Invalid response format: {data}"
+
     return data["choices"][0]["message"]["content"]
