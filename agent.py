@@ -2,9 +2,12 @@ import os
 from openai import OpenAI
 from prompts import SYSTEM_PROMPT
 
+OPENROUTER_KEY = os.getenv("OPENROUTER_API_KEY")
+OPENAI_KEY = os.getenv("OPENAI_API_KEY") or OPENROUTER_KEY
+
 client = OpenAI(
+    api_key=OPENAI_KEY,   # 👈 force non-empty key
     base_url="https://openrouter.ai/api/v1",
-    api_key=os.getenv("OPENROUTER_API_KEY"),
 )
 
 def run_agent(message: str):
