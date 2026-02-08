@@ -16,32 +16,46 @@ def run_agent_stream(message: str):
         "model": "deepseek/deepseek-chat",
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": message}
+            {"role": "user", "content": message},
         ],
         "temperature": 0.2,
         "max_tokens": 2000,
-        "stream": True
+        "stream": True,
     }
 
-    with requests.post(API_URL, headers=HEADERS, json=payload, stream=True) as r:
-        if r.status_code != 200:
-            yield "Error connecting to model."
-            return
+    try:
+        with requests.post(
+            API_URL,
+            headers=HEADERS,
+            json=payload,
+            stream=True,
+            timeout=60,
+        ) as r:
 
-        for line in r.iter_lines(decode_unicode=True):
-            if not line:
-                continue
+            if r.status_code != 200:
+                yield "The AI service is temporarily unavailable."
+                return
 
-            if line.startswith("data: "):
-                data = line.replace("data: ", "").strip()
-
-                if data == "[DONE]":
-                    break
-
-                try:
-                    chunk = json.loads(data)
-                    delta = chunk["choices"][0]["delta"]
-                    if "content" in delta:
-                        yield delta["content"]
-                except Exception:
+            for line in r.iter_lines(decode_unicode=True):
+                if not line:
                     continue
+
+                # OpenAI-style SSE lines
+                if line.startswith("data:"):
+                    data = line.replace("data:", "").strip()
+
+                    if data == "[DONE]":
+                        break
+
+                    try:
+                        chunk = json.loads(data)
+                        delta = chunk["choices"][0]["delta"]
+
+                        if "content" in delta:
+                            yield delta["content"]
+
+                    except Exception:
+                        continue
+
+    except Exception:
+        yield "The AI service is temporarily unavailable."
