@@ -15,7 +15,7 @@ app.add_middleware(
 
 def sse_generator(message: str):
     for token in run_agent_stream(message):
-        yield f"data: {token}\n\n"
+        yield f"{token}"
 
 @app.post("/chat")
 async def chat(request: Request):
