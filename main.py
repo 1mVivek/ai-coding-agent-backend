@@ -1,7 +1,8 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from agent import run_agent
+from fastapi.responses import StreamingResponse
+
+from agent import run_agent_stream
 
 app = FastAPI()
 
@@ -12,10 +13,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class ChatRequest(BaseModel):
-    message: str
+async def sse_stream(generator):
+    for token in generator:
+        yield f"data: {token}\n\n"
 
 @app.post("/chat")
-def chat(req: ChatRequest):
-    reply = run_agent(req.message)
-    return {"reply": reply}
+async def chat(request: Request):
+    body = await request.json()
+    message = body.get("message", "")
+
+    return StreamingResponse(
+        sse_stream(run_agent_stream(message)),
+        media_type="text/event-stream"
+    )
