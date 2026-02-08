@@ -52,7 +52,7 @@ def stream_agent(message: str):
                         delta = chunk["choices"][0]["delta"]
 
                         if "content" in delta:
-                            yield delta["content"]
+                            yield f"data: {delta['content']}\n\n".encode("utf-8")
 
                     except Exception:
                         continue
