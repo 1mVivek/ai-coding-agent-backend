@@ -1,16 +1,14 @@
 import os
-from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import StreamingResponse
-from core.memory import ShortTermMemory
+from core.sse import sse_stream
 from core.context import build_messages
-from core.stream import text_stream
+from core.memory import ShortTermMemory
 from agent.deepseek import stream_agent
 
-app = FastAPI()
 memory = ShortTermMemory()
 
-@app.post("/chat")
-async def chat(req: dict, x_api_key: str = Header(None)):
+@app.post("/chat/stream")
+async def chat_stream(req: dict, x_api_key: str = Header(None)):
     if x_api_key != INTERNAL_API_KEY:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
@@ -23,10 +21,14 @@ async def chat(req: dict, x_api_key: str = Header(None)):
 
     async def event_generator():
         async for event in stream_agent(messages):
-            if event["type"] == "token":
-                yield event["data"].encode("utf-8")
+            yield event
+        yield {"type": "done", "data": ""}
 
     return StreamingResponse(
-        event_generator(),
-        media_type="text/plain; charset=utf-8",
+        sse_stream(event_generator()),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
     )
