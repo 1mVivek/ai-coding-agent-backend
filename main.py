@@ -46,6 +46,6 @@ async def chat(
         )
 
     return StreamingResponse(
-        stream_agent(message),
-        media_type="text/plain"
+    stream_agent(message),
+    media_type="text/plain; charset=utf-8"
     )
