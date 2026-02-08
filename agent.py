@@ -11,7 +11,7 @@ HEADERS = {
     "Content-Type": "application/json",
 }
 
-def run_agent_stream(message: str):
+def stream_agent(message: str):
     payload = {
         "model": "deepseek/deepseek-chat",
         "messages": [
