@@ -4,9 +4,6 @@ from prompts import SYSTEM_PROMPT
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
-if not OPENROUTER_API_KEY:
-    raise RuntimeError("OPENROUTER_API_KEY is missing")
-
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 HEADERS = {
@@ -14,31 +11,43 @@ HEADERS = {
     "Content-Type": "application/json",
     "HTTP-Referer": "https://your-app-name.com",
     "X-Title": "AI Coding Agent",
-    "User-Agent": "ai-coding-agent/1.0"
 }
-def run_agent(message: str):
+
+def run_agent_stream(message: str):
     payload = {
-    "model": "deepseek/deepseek-chat",
-    "messages": [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": message}
-    ],
-    "temperature": 0.2,
-    "max_tokens": 2000
+        "model": "deepseek/deepseek-chat",
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": message}
+        ],
+        "temperature": 0.2,
+        "max_tokens": 2000,
+        "stream": True   # 🔥 CRITICAL
     }
 
-    response = requests.post(API_URL, headers=HEADERS, json=payload)
+    with requests.post(API_URL, headers=HEADERS, json=payload, stream=True) as r:
+        if r.status_code != 200:
+            yield f"[ERROR {r.status_code}] {r.text}"
+            return
 
-    # 👇 DEBUG LOG (critical)
-    if response.status_code != 200:
-        print("OpenRouter status:", response.status_code)
-        print("OpenRouter response:", response.text)
-        return f"Upstream error: {response.text}"
+        for line in r.iter_lines():
+            if not line:
+                continue
 
-    data = response.json()
+            decoded = line.decode("utf-8")
 
-    # 👇 SAFETY CHECK
-    if "choices" not in data:
-        return f"Invalid response format: {data}"
+            if decoded.startswith("data: "):
+                data = decoded.replace("data: ", "").strip()
 
-    return data["choices"][0]["message"]["content"]
+                if data == "[DONE]":
+                    break
+
+                try:
+                    chunk = eval(data)  # OpenRouter sends JSON per chunk
+                    delta = chunk["choices"][0]["delta"]
+
+                    if "content" in delta:
+                        yield delta["content"]
+
+                except Exception:
+                    continue
