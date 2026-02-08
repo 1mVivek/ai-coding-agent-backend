@@ -13,8 +13,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-async def sse_stream(generator):
-    for token in generator:
+def sse_generator(message: str):
+    for token in run_agent_stream(message):
         yield f"data: {token}\n\n"
 
 @app.post("/chat")
@@ -23,6 +23,10 @@ async def chat(request: Request):
     message = body.get("message", "")
 
     return StreamingResponse(
-        sse_stream(run_agent_stream(message)),
-        media_type="text/event-stream"
+        sse_generator(message),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
     )
