@@ -42,7 +42,7 @@ async def chat(
     if len(message) > 4000:
         return StreamingResponse(
             iter(["Message too long. Please shorten it."]),
-            media_type="text/plain"
+            media_type="text/event-stream"
         )
 
     return StreamingResponse(
