@@ -1,30 +1,45 @@
+import os
 import json
 import httpx
-from core.protocol import ChatEvent
 
-async def stream_agent(messages):
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+if not OPENROUTER_API_KEY:
+    raise RuntimeError("OPENROUTER_API_KEY is not set")
+
+API_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+
+async def stream_agent(messages: list[dict]):
     payload = {
         "model": "deepseek/deepseek-chat",
         "messages": messages,
-        "stream": True,
         "temperature": 0.2,
+        "max_tokens": 2000,
+        "stream": True,
+    }
+
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
     }
 
     async with httpx.AsyncClient(timeout=None) as client:
         async with client.stream(
             "POST",
-            "https://openrouter.ai/api/v1/chat/completions",
+            API_URL,
+            headers=headers,
             json=payload,
-            headers={
-                "Authorization": f"Bearer {YOUR_KEY}",
-                "Content-Type": "application/json",
-            },
         ) as response:
+
+            if response.status_code != 200:
+                raise RuntimeError(await response.aread())
+
             async for line in response.aiter_lines():
-                if not line.startswith("data:"):
+                if not line or not line.startswith("data:"):
                     continue
 
                 data = line.replace("data:", "").strip()
+
                 if data == "[DONE]":
                     yield {"type": "done", "data": ""}
                     break
@@ -32,7 +47,9 @@ async def stream_agent(messages):
                 try:
                     chunk = json.loads(data)
                     delta = chunk["choices"][0]["delta"]
+
                     if "content" in delta:
                         yield {"type": "token", "data": delta["content"]}
-                except:
+
+                except (json.JSONDecodeError, KeyError, IndexError):
                     continue
