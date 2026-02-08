@@ -28,7 +28,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "dev-key")
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
+if not INTERNAL_API_KEY:
+    raise RuntimeError("INTERNAL_API_KEY is not set")
 
 memory = ShortTermMemory()
 
