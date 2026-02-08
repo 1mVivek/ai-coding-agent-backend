@@ -1,43 +1,32 @@
 import os
-from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
-import os
-
-from agent import stream_agent
-
-INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
+from core.memory import ShortTermMemory
+from core.context import build_messages
+from core.stream import text_stream
+from agent.deepseek import stream_agent
 
 app = FastAPI()
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-class ChatRequest(BaseModel):
-    message: str
+memory = ShortTermMemory()
 
 @app.post("/chat")
-async def chat(
-    req: ChatRequest,
-    x_api_key: str = Header(None),
-):
+async def chat(req: dict, x_api_key: str = Header(None)):
     if x_api_key != INTERNAL_API_KEY:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    message = req.message.strip()
+    user_msg = req.get("message", "").strip()
+    if not user_msg:
+        raise HTTPException(status_code=400, detail="Empty message")
 
-    if not message:
-        return StreamingResponse(
-            iter([b"Please enter a message"]),
-            media_type="text/plain; charset=utf-8",
-        )
+    memory.add("user", user_msg)
+    messages = build_messages(memory, user_msg)
+
+    async def event_generator():
+        async for event in stream_agent(messages):
+            if event["type"] == "token":
+                yield event["data"].encode("utf-8")
 
     return StreamingResponse(
-        stream_agent(message),
+        event_generator(),
         media_type="text/plain; charset=utf-8",
     )
