@@ -1,103 +1,99 @@
 import os
-from fastapi import FastAPI, Header, HTTPException
+import uuid
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
-from core.memory import ShortTermMemory
-from core.context import build_messages
-from core.stream import text_stream
-from core.sse import sse_stream
 from agent.deepseek import stream_agent
+from memory import ShortTermMemory
 
-import os
-
-# =====================
-# App setup
-# =====================
-
-app = FastAPI(
-    title="Aura AI Backend",
-    version="0.1.0",
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # tighten later
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
+# =========================
+# ENV VALIDATION (CRITICAL)
+# =========================
 INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
 if not INTERNAL_API_KEY:
     raise RuntimeError("INTERNAL_API_KEY is not set")
 
-memory = ShortTermMemory()
+# =========================
+# APP
+# =========================
+app = FastAPI()
 
-# =====================
-# Health check
-# =====================
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "https://aura-frontend-o3r.onrender.com",
+    ],
+    allow_credentials=True,
+    allow_methods=["POST"],
+    allow_headers=["*"],
+)
 
-@app.get("/")
-async def root():
-    return {"status": "ok"}
+# =========================
+# MEMORY STORE (TEMP)
+# =========================
+memory_store: dict[str, ShortTermMemory] = {}
 
-@app.get("/health")
-async def health():
-    return {"status": "healthy"}
 
-# =====================
-# Normal chat (plain text stream)
-# =====================
+def get_memory(session_id: str) -> ShortTermMemory:
+    if session_id not in memory_store:
+        memory_store[session_id] = ShortTermMemory()
+    return memory_store[session_id]
 
+
+# =========================
+# SCHEMA
+# =========================
+class ChatRequest(BaseModel):
+    message: str
+    session_id: str | None = None
+
+
+# =========================
+# ROUTE
+# =========================
 @app.post("/chat")
-async def chat(req: dict, x_api_key: str = Header(None)):
+async def chat(
+    req: ChatRequest,
+    x_api_key: str = Header(None),
+):
     if x_api_key != INTERNAL_API_KEY:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    user_msg = req.get("message", "").strip()
+    user_msg = req.message.strip()
     if not user_msg:
         raise HTTPException(status_code=400, detail="Empty message")
 
+    session_id = req.session_id or str(uuid.uuid4())
+    memory = get_memory(session_id)
+
+    # Add user message ONCE
     memory.add("user", user_msg)
-    messages = build_messages(memory, user_msg)
 
     async def event_generator():
-        async for event in stream_agent(messages):
+        assistant_text = ""
+
+        async for event in stream_agent(memory.build()):
             if event["type"] == "token":
-                yield event["data"].encode("utf-8")
+                assistant_text += event["data"]
+                yield f"data: {event['data']}\n\n"
+
+            elif event["type"] == "done":
+                break
+
+        # Persist assistant reply AFTER stream completes
+        if assistant_text:
+            memory.add("assistant", assistant_text)
+
+        yield "event: done\ndata: [DONE]\n\n"
 
     return StreamingResponse(
         event_generator(),
-        media_type="text/plain; charset=utf-8",
-    )
-
-# =====================
-# SSE chat (modern clients)
-# =====================
-
-@app.post("/chat/stream")
-async def chat_stream(req: dict, x_api_key: str = Header(None)):
-    if x_api_key != INTERNAL_API_KEY:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
-    user_msg = req.get("message", "").strip()
-    if not user_msg:
-        raise HTTPException(status_code=400, detail="Empty message")
-
-    memory.add("user", user_msg)
-    messages = build_messages(memory, user_msg)
-
-    async def event_generator():
-        async for event in stream_agent(messages):
-            yield event
-        yield {"type": "done", "data": ""}
-
-    return StreamingResponse(
-        sse_stream(event_generator()),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
         },
     )
