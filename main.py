@@ -135,37 +135,45 @@ async def chat(
     memory.add("user", user_msg)
 
     async def event_generator():
-        """Generate SSE events from agent stream."""
-        assistant_text = ""
-        
-        try:
-            async for event in stream_agent(memory.build()):
-                if event["type"] == "token":
-                    assistant_text += event["data"]
-                    yield f"data: {event['data']}\n\n"
+    assistant_text = ""
 
-                elif event["type"] == "done":
-                    break
+    try:
+        # stream start
+        yield "event: start\ndata: {}\n\n"
 
-            # Persist assistant reply AFTER stream completes
-            if assistant_text:
-                memory.add("assistant", assistant_text)
-                logger.info(f"Chat completed: session={session_id}, response_length={len(assistant_text)}")
+        async for event in stream_agent(memory.build()):
+            if await request.is_disconnected():
+                logger.info(f"Client disconnected: session={session_id}")
+                break
 
-            yield "event: done\ndata: [DONE]\n\n"
-            
-        except APIError as e:
-            error_msg = f"API Error: {str(e)}"
-            logger.error(f"Stream error for session {session_id}: {error_msg}")
-            yield f"event: error\ndata: {error_msg}\n\n"
-        except StreamError as e:
-            error_msg = f"Stream Error: {str(e)}"
-            logger.error(f"Stream error for session {session_id}: {error_msg}")
-            yield f"event: error\ndata: {error_msg}\n\n"
-        except Exception as e:
-            error_msg = f"Unexpected error: {str(e)}"
-            logger.error(f"Unexpected error for session {session_id}: {error_msg}", exc_info=True)
-            yield f"event: error\ndata: {error_msg}\n\n"
+            if event["type"] == "token":
+                assistant_text += event["data"]
+                yield f"event: token\ndata: {event['data']}\n\n"
+
+            elif event["type"] == "done":
+                break
+
+        # persist assistant reply AFTER stream ends
+        if assistant_text:
+            memory.add("assistant", assistant_text)
+            logger.info(
+                f"Chat completed: session={session_id}, "
+                f"response_length={len(assistant_text)}"
+            )
+
+        yield "event: done\ndata: {}\n\n"
+
+    except APIError as e:
+        logger.error(f"API error: {e}")
+        yield f"event: error\ndata: {str(e)}\n\n"
+
+    except StreamError as e:
+        logger.error(f"Stream error: {e}")
+        yield f"event: error\ndata: {str(e)}\n\n"
+
+    except Exception as e:
+        logger.exception("Unexpected SSE error")
+        yield f"event: error\ndata: Unexpected server error\n\n"
 
     return StreamingResponse(
         event_generator(),
