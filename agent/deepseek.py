@@ -106,7 +106,7 @@ async def stream_agent(
 
                     except (json.JSONDecodeError, KeyError, IndexError) as e:
                         # Log but continue processing - partial failures shouldn't stop stream
-                        logger.warning(f"Failed to parse stream chunk: {e}")
+                        logger.warning(f"Failed to parse stream chunk: {e}. Raw data: {data[:100]}")
                         continue
                         
     except httpx.HTTPError as e:

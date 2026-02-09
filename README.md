@@ -58,6 +58,9 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 ```bash
 pip install -r requirements.txt
+
+# For development (optional)
+pip install -r requirements-dev.txt
 ```
 
 ### 4. Configure Environment
@@ -255,10 +258,13 @@ docker run -p 8000:8000 --env-file .env ai-agent-backend
 
 ```bash
 # Install test dependencies
-pip install pytest pytest-asyncio httpx
+pip install -r requirements-dev.txt
 
 # Run tests
 pytest tests/ -v
+
+# Run with coverage
+pytest tests/ --cov=. --cov-report=html
 ```
 
 ### Code Quality

@@ -107,6 +107,7 @@ async def health_check():
 @app.post("/chat")
 async def chat(
     req: ChatRequest,
+    request: Request,
     x_api_key: str = Header(None, alias="x-api-key"),
 ):
     """
@@ -116,7 +117,8 @@ async def chat(
     """
     # Authentication
     if not x_api_key or x_api_key != settings.internal_api_key:
-        logger.warning(f"Unauthorized access attempt")
+        client_host = request.client.host if request.client else "unknown"
+        logger.warning(f"Unauthorized access attempt from {client_host}")
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     user_msg = req.message.strip()
