@@ -1,0 +1,5 @@
+Q: Does Aura AI support streaming?
+A: Yes, Aura AI supports true SSE-based streaming with token-level updates.
+
+Q: Does Aura AI store user data?
+A: User conversations are stored only for the purpose of session memory.
