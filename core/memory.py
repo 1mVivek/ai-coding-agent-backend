@@ -1,95 +1,65 @@
-import json
-import hashlib
-import redis
 from typing import List, Dict
-
-from .vector_memory import VectorMemory
+from .token_budget import trim_to_token_budget
 from .summary import summarize_messages
-from .token_budget import messages_token_count
+from .vector_memory import VectorMemory
 
-MAX_TOKENS = 3000
-MAX_TURNS = 10
+class ShortTermMemory:
+    def __init__(
+        self,
+        max_turns: int = 8,
+        max_tokens: int = 3000,
+    ):
+        self.max_turns = max_turns
+        self.max_tokens = max_tokens
 
-redis_client = redis.Redis(
-    host="REDIS_HOST",
-    port=6379,
-    decode_responses=True
-)
-
-
-def hash_session(session_id: str) -> str:
-    return hashlib.sha256(session_id.encode()).hexdigest()
-
-
-class Memory:
-    def __init__(self, session_id: str):
-        self.session = hash_session(session_id)
+        self.messages: List[Dict[str, str]] = []
+        self.summary: str | None = None
         self.vector = VectorMemory()
 
-    # ---------- Redis helpers ----------
-
-    def _key(self, suffix: str) -> str:
-        return f"session:{self.session}:{suffix}"
-
-    # ---------- Core API ----------
-
     def add(self, role: str, content: str):
-        msg = {"role": role, "content": content}
+        self.messages.append({"role": role, "content": content})
+        self._trim()
 
-        redis_client.rpush(self._key("messages"), json.dumps(msg))
-
+        # Only persist assistant replies into vector store
         if role == "assistant":
             self.vector.add(content)
 
-        self._trim()
+    def _trim(self):
+        # Turn-based trim
+        convo = [m for m in self.messages if m["role"] != "system"]
+        system = [m for m in self.messages if m["role"] == "system"]
+
+        if len(convo) > self.max_turns * 2:
+            old = convo[:-self.max_turns * 2]
+            convo = convo[-self.max_turns * 2:]
+
+            # Summarize removed messages
+            self.summary = summarize_messages(old)
+
+        merged = system + convo
+
+        # Token-budget trim (hard limit)
+        merged = trim_to_token_budget(merged, self.max_tokens)
+
+        self.messages = merged
 
     def build(self) -> List[Dict[str, str]]:
-        messages = self._load_messages()
-        summary = redis_client.get(self._key("summary"))
+        final = []
 
-        context = []
-
-        if summary:
-            context.append({
+        # System-controlled summary (NOT user editable)
+        if self.summary:
+            final.append({
                 "role": "system",
-                "content": f"Conversation summary:\n{summary}"
+                "content": f"Conversation summary:\n{self.summary}"
             })
 
-        context.extend(messages)
-        return context
+        final.extend(self.messages)
 
-    # ---------- Internal ----------
+        return final.copy()
 
-    def _load_messages(self) -> List[Dict]:
-        raw = redis_client.lrange(self._key("messages"), 0, -1)
-        return [json.loads(m) for m in raw]
-
-    def _save_messages(self, messages: List[Dict]):
-        redis_client.delete(self._key("messages"))
-        for m in messages:
-            redis_client.rpush(self._key("messages"), json.dumps(m))
-
-    def _trim(self):
-        messages = self._load_messages()
-
-        # Turn-based trimming
-        non_system = [m for m in messages if m["role"] != "system"]
-        if len(non_system) > MAX_TURNS * 2:
-            overflow = non_system[:-MAX_TURNS * 2]
-            summary = summarize_messages(overflow)
-            redis_client.set(self._key("summary"), summary)
-            messages = non_system[-MAX_TURNS * 2:]
-            self._save_messages(messages)
-
-        # Token-based trimming (HARD LIMIT)
-        while messages_token_count(messages) > MAX_TOKENS:
-            messages.pop(0)
-
-        self._save_messages(messages)
+    def retrieve_context(self, query: str) -> List[str]:
+        return self.vector.search(query)
 
     def clear(self):
-        redis_client.delete(
-            self._key("messages"),
-            self._key("summary"),
-        )
-        self.vector.clear()
+        self.messages.clear()
+        self.summary = None
