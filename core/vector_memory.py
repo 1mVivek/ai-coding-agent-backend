@@ -1,38 +1,24 @@
 from typing import List
-import time
-import math
+import hashlib
 
 class VectorMemory:
     """
-    Lightweight semantic memory.
-    Replace similarity() with embeddings later.
+    Minimal vector memory interface.
+    FAISS / RedisVector compatible later.
     """
 
-    def __init__(self, max_items: int = 200):
-        self.max_items = max_items
-        self.store: List[dict] = []
+    def __init__(self):
+        self._store = []
+
+    def _hash(self, text: str) -> str:
+        return hashlib.sha256(text.encode()).hexdigest()
 
     def add(self, text: str):
-        self.store.append({
+        self._store.append({
+            "id": self._hash(text),
             "text": text,
-            "timestamp": time.time()
         })
 
-        if len(self.store) > self.max_items:
-            self.store.pop(0)
-
-    def similarity(self, a: str, b: str) -> float:
-        a, b = a.lower(), b.lower()
-        common = set(a.split()) & set(b.split())
-        return len(common) / max(len(set(a.split())), 1)
-
     def search(self, query: str, k: int = 3) -> List[str]:
-        scored = [
-            (self.similarity(query, item["text"]), item["text"])
-            for item in self.store
-        ]
-        scored.sort(reverse=True)
-        return [text for score, text in scored[:k]]
-
-    def clear(self):
-        self.store.clear()
+        # Placeholder: return most recent
+        return [item["text"] for item in self._store[-k:]]
