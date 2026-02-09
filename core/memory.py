@@ -1,172 +1,95 @@
-from __future__ import annotations
-
-import time
+import json
 import hashlib
-from typing import List, Dict, Optional
+import redis
+from typing import List, Dict
+
+from .vector_memory import VectorMemory
+from .summary import summarize_messages
+from .token_budget import messages_token_count
+
+MAX_TOKENS = 3000
+MAX_TURNS = 10
+
+redis_client = redis.Redis(
+    host="REDIS_HOST",
+    port=6379,
+    decode_responses=True
+)
 
 
-# =========================
-# SECURITY CONSTANTS
-# =========================
-MAX_MESSAGE_LENGTH = 4000
-MAX_SESSIONS = 10_000
-
-
-def _sanitize(text: str) -> str:
-    """Basic input sanitation."""
-    text = text.strip()
-    if len(text) > MAX_MESSAGE_LENGTH:
-        text = text[:MAX_MESSAGE_LENGTH]
-    return text
-
-
-def _hash_session(session_id: str) -> str:
-    """Prevent raw session IDs from being stored."""
+def hash_session(session_id: str) -> str:
     return hashlib.sha256(session_id.encode()).hexdigest()
 
 
-# =========================
-# VECTOR MEMORY (PLACEHOLDER)
-# =========================
-class VectorMemory:
-    """
-    Long-term memory store.
-    Replace internals with FAISS / Chroma / Weaviate later.
-    """
+class Memory:
+    def __init__(self, session_id: str):
+        self.session = hash_session(session_id)
+        self.vector = VectorMemory()
 
-    def __init__(self):
-        self._store: List[Dict[str, str]] = []
+    # ---------- Redis helpers ----------
 
-    def add(self, text: str):
-        self._store.append(
-            {
-                "text": text,
-                "timestamp": time.time(),
-            }
-        )
-
-    def search(self, query: str, k: int = 3) -> List[str]:
-        # TEMP: naive similarity (replace with embeddings later)
-        return [item["text"] for item in self._store[-k:]]
-
-    def clear(self):
-        self._store.clear()
-
-
-# =========================
-# SHORT + SUMMARY MEMORY
-# =========================
-class ShortTermMemory:
-    """
-    ChatGPT-style memory:
-    - rolling recent messages
-    - summarized older context
-    - vector long-term memory
-    """
-
-    def __init__(self, max_turns: int = 10):
-        self.max_turns = max_turns
-        self.messages: List[Dict[str, str]] = []
-        self.summary: Optional[str] = None
-        self.vector_memory = VectorMemory()
+    def _key(self, suffix: str) -> str:
+        return f"session:{self.session}:{suffix}"
 
     # ---------- Core API ----------
 
     def add(self, role: str, content: str):
-        content = _sanitize(content)
+        msg = {"role": role, "content": content}
 
-        self.messages.append(
-            {
-                "role": role,
-                "content": content,
-            }
-        )
+        redis_client.rpush(self._key("messages"), json.dumps(msg))
 
         if role == "assistant":
-            self.vector_memory.add(content)
+            self.vector.add(content)
 
         self._trim()
 
     def build(self) -> List[Dict[str, str]]:
-        """
-        Build final context for LLM:
-        system → summary → recent messages
-        """
-        context: List[Dict[str, str]] = []
+        messages = self._load_messages()
+        summary = redis_client.get(self._key("summary"))
 
-        if self.summary:
-            context.append(
-                {
-                    "role": "system",
-                    "content": f"Conversation summary:\n{self.summary}",
-                }
-            )
+        context = []
 
-        context.extend(self.messages)
+        if summary:
+            context.append({
+                "role": "system",
+                "content": f"Conversation summary:\n{summary}"
+            })
+
+        context.extend(messages)
         return context
-
-    def clear(self):
-        self.messages.clear()
-        self.summary = None
-        self.vector_memory.clear()
 
     # ---------- Internal ----------
 
+    def _load_messages(self) -> List[Dict]:
+        raw = redis_client.lrange(self._key("messages"), 0, -1)
+        return [json.loads(m) for m in raw]
+
+    def _save_messages(self, messages: List[Dict]):
+        redis_client.delete(self._key("messages"))
+        for m in messages:
+            redis_client.rpush(self._key("messages"), json.dumps(m))
+
     def _trim(self):
-        """
-        Trim old messages and summarize if needed.
-        """
-        system_msgs = [m for m in self.messages if m["role"] == "system"]
-        convo = [m for m in self.messages if m["role"] != "system"]
+        messages = self._load_messages()
 
-        max_messages = self.max_turns * 2
+        # Turn-based trimming
+        non_system = [m for m in messages if m["role"] != "system"]
+        if len(non_system) > MAX_TURNS * 2:
+            overflow = non_system[:-MAX_TURNS * 2]
+            summary = summarize_messages(overflow)
+            redis_client.set(self._key("summary"), summary)
+            messages = non_system[-MAX_TURNS * 2:]
+            self._save_messages(messages)
 
-        if len(convo) <= max_messages:
-            return
+        # Token-based trimming (HARD LIMIT)
+        while messages_token_count(messages) > MAX_TOKENS:
+            messages.pop(0)
 
-        overflow = convo[:-max_messages]
-        convo = convo[-max_messages:]
+        self._save_messages(messages)
 
-        self._summarize(overflow)
-        self.messages = system_msgs + convo
-
-    def _summarize(self, old_messages: List[Dict[str, str]]):
-        """
-        Lightweight summary generator.
-        (Replace with LLM call later.)
-        """
-        text = " ".join(m["content"] for m in old_messages)
-        if not text:
-            return
-
-        if self.summary:
-            self.summary += " " + text[:800]
-        else:
-            self.summary = text[:800]
-
-
-# =========================
-# MEMORY STORE (SECURE)
-# =========================
-class MemoryStore:
-    """
-    Secure session-based memory store.
-    """
-
-    def __init__(self):
-        self._store: Dict[str, ShortTermMemory] = {}
-
-    def get(self, session_id: str) -> ShortTermMemory:
-        if len(self._store) > MAX_SESSIONS:
-            raise RuntimeError("Memory store limit exceeded")
-
-        key = _hash_session(session_id)
-
-        if key not in self._store:
-            self._store[key] = ShortTermMemory()
-
-        return self._store[key]
-
-    def clear(self, session_id: str):
-        key = _hash_session(session_id)
-        self._store.pop(key, None)
+    def clear(self):
+        redis_client.delete(
+            self._key("messages"),
+            self._key("summary"),
+        )
+        self.vector.clear()
