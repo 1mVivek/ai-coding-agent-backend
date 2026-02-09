@@ -9,11 +9,13 @@ import json
 from typing import AsyncGenerator, Dict, Any, Optional
 import httpx
 
-from src.core.config import settings
+from src.core.config import init_settings
 from src.core.logger import get_logger
 from src.core.exceptions import APIError, StreamError
 
-logger = get_logger()
+# Initialize settings
+settings = init_settings()
+logger = get_logger(level=settings.log_level)
 
 
 async def stream_agent(

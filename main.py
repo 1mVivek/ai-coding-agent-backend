@@ -12,10 +12,12 @@ from pydantic import BaseModel, Field
 
 from agent.deepseek import stream_agent
 from core.memory import ShortTermMemory
-from src.core.config import settings
+from src.core.config import init_settings
 from src.core.logger import get_logger
 from src.core.exceptions import APIError, StreamError, ValidationError
 
+# Initialize settings at startup
+settings = init_settings()
 logger = get_logger(level=settings.log_level)
 
 
