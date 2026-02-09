@@ -1,0 +1,3 @@
+Aura AI is an AI coding assistant designed to help developers build
+production-grade systems. It supports streaming responses, memory,
+retrieval-augmented generation (RAG), and multi-agent reasoning.
