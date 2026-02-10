@@ -1,5 +1,5 @@
 class ShortTermMemory:
-    def __init__(self, max_messages: int = 12):
+    def __init__(self, max_messages: int = 10):
         self.max_messages = max_messages
         self.messages = []
 
@@ -9,3 +9,6 @@ class ShortTermMemory:
 
     def get(self):
         return self.messages
+
+    def build(self):
+        return list(self.messages)

@@ -16,12 +16,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from agent.deepseek import stream_agent
+from src.agent.deepseek import stream_agent
 from src.core.config import init_settings
 from src.core.logger import get_logger
-from src.core.memory import ShortTermMemory
-from src.core.vector_memory import VectorMemory
-from src.core.rag import RAGEngine
+from src.core.memory.short_term import ShortTermMemory
+from src.core.memory.vector_memory import VectorMemory
+from src.core.rag.rag_engine import RAGEngine
 
 # ---------------------------------------------------------------------
 # Settings & Logger

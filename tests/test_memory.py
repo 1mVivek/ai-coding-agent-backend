@@ -1,6 +1,6 @@
 """Unit tests for memory management."""
 import pytest
-from core.memory import ShortTermMemory
+from src.core.memory.short_term import ShortTermMemory
 
 
 def test_memory_initialization():

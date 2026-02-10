@@ -18,9 +18,11 @@ class VectorStore:
         self,
         dim: int = 384,
         persist_path: Optional[str] = None,
+        embedding_model: Optional[str] = None,
     ):
         self.dim = dim
         self.persist_path = persist_path
+        self.embedding_model = embedding_model
 
         self.index = faiss.IndexFlatL2(dim)
         self.texts: List[str] = []
