@@ -1,3 +1,0 @@
-def summarize(messages: list[dict]) -> str:
-    text = "\n".join(f"{m['role']}: {m['content']}" for m in messages)
-    return f"Summary: {text[:500]}"
