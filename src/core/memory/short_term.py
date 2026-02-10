@@ -8,7 +8,9 @@ class ShortTermMemory:
         self.messages = self.messages[-self.max_messages :]
 
     def get(self):
+        """Return the internal messages list directly."""
         return self.messages
 
     def build(self):
+        """Return a copy of messages list (safe for modification)."""
         return list(self.messages)

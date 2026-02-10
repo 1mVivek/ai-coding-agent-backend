@@ -20,6 +20,15 @@ class VectorStore:
         persist_path: Optional[str] = None,
         embedding_model: Optional[str] = None,
     ):
+        """
+        Initialize the vector store.
+        
+        Args:
+            dim: Embedding dimension size.
+            persist_path: Optional path to persist the index.
+            embedding_model: Optional model name for embeddings (reserved for future use,
+                           currently uses deterministic hash-based embeddings).
+        """
         self.dim = dim
         self.persist_path = persist_path
         self.embedding_model = embedding_model
